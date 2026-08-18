@@ -1,0 +1,5 @@
+.DS_Store
+.dotfiles-backups/
+home/.bash_history
+home/.viminfo
+*.local
