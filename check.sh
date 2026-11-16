@@ -12,7 +12,12 @@ check_sources
 for source in "${sources[@]}"; do
   scan_content "$SCRIPT_DIR/home/$source"
 done
+scan_content "$SCRIPT_DIR/home/.gitconfig"
+git config --file "$SCRIPT_DIR/home/.gitconfig" --list >/dev/null
 for script in install.sh capture.sh restore.sh check.sh lib/common.sh home/.bashrc home/.bash_profile; do
+  bash -n "$SCRIPT_DIR/$script"
+done
+for script in devbox scripts/devbox-keyring scripts/devbox-github-login scripts/devbox-claude-token scripts/claude-keyring; do
   bash -n "$SCRIPT_DIR/$script"
 done
 git -C "$SCRIPT_DIR" diff --check

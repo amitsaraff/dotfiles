@@ -48,10 +48,13 @@ _dotfiles_git_prompt_loaded=0
 for _dotfiles_git_prompt in \
   "${BASH_GIT_PROMPT_FILE:-}" \
   "$HOME/.bash-git-prompt/share/gitprompt.sh" \
+  "$HOME/.bash-git-prompt/gitprompt.sh" \
+  "${HOMEBREW_PREFIX:+$HOMEBREW_PREFIX/opt/bash-git-prompt/share/gitprompt.sh}" \
   "/opt/homebrew/opt/bash-git-prompt/share/gitprompt.sh" \
   "/usr/local/opt/bash-git-prompt/share/gitprompt.sh"; do
   if [ "${DOTFILES_GIT_PROMPT:-auto}" != off ] &&
      [ -n "$_dotfiles_git_prompt" ] && [ -r "$_dotfiles_git_prompt" ]; then
+    GIT_PROMPT_FETCH_REMOTE_STATUS="${GIT_PROMPT_FETCH_REMOTE_STATUS:-0}"
     # shellcheck disable=SC1090
     . "$_dotfiles_git_prompt"
     _dotfiles_git_prompt_loaded=1

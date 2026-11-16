@@ -1,0 +1,55 @@
+---
+- name: Install Ubuntu CLI, editor, document and build dependencies
+  become: true
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+    state: present
+    name:
+      - bash
+      - bash-completion
+      - git
+      - gh
+      - curl
+      - ca-certificates
+      - build-essential
+      - procps
+      - file
+      - pkg-config
+      - libssl-dev
+      - python3
+      - python3-venv
+      - neovim
+      - tmux
+      - ncurses-term
+      - fzf
+      - bat
+      - tree
+      - ripgrep
+      - fd-find
+      - jq
+      - unzip
+      - zip
+      - xz-utils
+      - zstd
+      - rsync
+      - imagemagick
+      - poppler-utils
+      - tesseract-ocr
+      - shellcheck
+- name: Create private tool and state directories
+  ansible.builtin.file:
+    path: "{{ devbox_home }}/{{ item }}"
+    state: directory
+    mode: '0700'
+  loop: [.local/bin, .local/lib/node_modules, .local/share/devbox, .local/state/devbox, .cache/devbox, .config/mise]
+- name: Provide conventional Ubuntu tool names without aliases
+  ansible.builtin.file:
+    src: "{{ item.src }}"
+    dest: "{{ devbox_home }}/.local/bin/{{ item.name }}"
+    state: link
+    force: false
+  loop:
+    - {name: fd, src: /usr/bin/fdfind}
+    - {name: bat, src: /usr/bin/batcat}
+  when: not ansible_check_mode

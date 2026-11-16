@@ -1,0 +1,29 @@
+---
+- name: Create scoped browser signing-key directory
+  become: true
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+- name: Install Google's Linux signing key
+  become: true
+  ansible.builtin.get_url:
+    url: https://dl.google.com/linux/linux_signing_key.pub
+    dest: /etc/apt/keyrings/google-chrome.asc
+    mode: '0644'
+- name: Configure signed Google Chrome Stable repository
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/google-chrome.list
+    mode: '0644'
+    content: |
+      # Managed by dotfiles Ansible.
+      deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.asc] https://dl.google.com/linux/chrome/deb/ stable main
+  register: chrome_repo
+- name: Install Google Chrome Stable
+  become: true
+  ansible.builtin.apt:
+    name: google-chrome-stable
+    state: present
+    update_cache: "{{ chrome_repo.changed }}"
+  when: not ansible_check_mode

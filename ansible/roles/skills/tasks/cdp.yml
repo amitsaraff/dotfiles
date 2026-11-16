@@ -1,0 +1,40 @@
+---
+- name: Inspect browser CLI source revision
+  ansible.builtin.command:
+    argv: [git, -C, "{{ devbox_src }}/cdp-cli", rev-parse, HEAD]
+  register: cdp_revision
+  changed_when: false
+- name: Inspect browser CLI source edits
+  ansible.builtin.command:
+    argv: [git, -C, "{{ devbox_src }}/cdp-cli", status, --porcelain]
+  register: cdp_edits
+  changed_when: false
+- name: Require reviewed browser CLI source
+  ansible.builtin.assert:
+    that:
+      - cdp_revision.stdout == devbox_cdp_revision
+      - cdp_edits.stdout == ''
+    fail_msg: Review cdp-cli revision or local edits before installation; reapply never updates or resets its checkout.
+- name: Inspect installed CDP build
+  ansible.builtin.command:
+    argv: ["{{ devbox_home }}/.local/bin/cdp", version, --json]
+  register: cdp_installed
+  failed_when: false
+  changed_when: false
+- name: Install CDP binary and guide without services or browser sessions
+  ansible.builtin.command:
+    argv: ["{{ devbox_home }}/.local/bin/mise", exec, --, make, install]
+    chdir: "{{ devbox_src }}/cdp-cli"
+  when: cdp_installed.rc != 0 or devbox_cdp_revision not in cdp_installed.stdout
+- name: Verify installed CDP identity
+  ansible.builtin.command:
+    argv: ["{{ devbox_home }}/.local/bin/cdp", version, --json]
+  register: cdp_version
+  changed_when: false
+  failed_when: cdp_version.rc != 0 or devbox_cdp_revision not in cdp_version.stdout
+- name: Verify browser mode command support
+  ansible.builtin.command:
+    argv: ["{{ devbox_home }}/.local/bin/cdp", --help]
+  register: cdp_help
+  changed_when: false
+  failed_when: cdp_help.rc != 0 or '--browser-mode' not in cdp_help.stdout

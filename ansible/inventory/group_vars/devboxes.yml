@@ -1,0 +1,35 @@
+---
+devbox_owner: amitsaraff
+devbox_dotfiles_url: https://github.com/amitsaraff/dotfiles.git
+devbox_components: bash,nvim,tmux
+devbox_notebooks: false
+# Reviewed personal skills and their browser CLI dependency. Reapply never pulls.
+devbox_skills_revision: 5648a28d0f1e3cf257c63c9cc57cba704d63353a
+devbox_cdp_revision: d227018af6cb6f302355a6f9aabf3113131013f8
+devbox_homebrew_installer_revision: e5b3c5834e3932c8aaa42deef4794076c9b0cbf0
+devbox_homebrew_installer_checksum: sha256:5f333bbe53bc490e51e7ccb1df8779b3dd6ee73a1a7379efda216edb08ccb148
+# Deliberate upgrade pins. OS packages use state=present, never a dist-upgrade.
+devbox_node_version: 26.13.1
+devbox_go_version: 1.27.4
+devbox_python_versions: [3.13.18, 3.14.10]
+devbox_pdm_version: 2.29.7
+devbox_codex_version: 0.169.0
+devbox_claude_version: 2.1.325
+devbox_playwright_cli_version: 0.1.24
+devbox_jupyter_version: 4.5.0
+devbox_artifacts:
+  - name: mise
+    version: 2026.11.9
+    url: https://github.com/jdx/mise/releases/download/v2026.11.9/mise-v2026.11.9-linux-x64.tar.gz
+    checksum: sha256:23ba592fcbc61f057e2b82c1eafd085832712ba0c759b714ca16cd06babca378
+    executable: mise/bin/mise
+  - name: uv
+    version: 0.13.8
+    url: https://github.com/astral-sh/uv/releases/download/0.13.8/uv-x86_64-unknown-linux-gnu.tar.gz
+    checksum: sha256:5acfd9177cfecf0bf87578f059728215ccc884388988f55f7a65041b57387d91
+    executable: uv-x86_64-unknown-linux-gnu/uv
+  - name: pixi
+    version: 0.84.2
+    url: https://github.com/prefix-dev/pixi/releases/download/v0.84.2/pixi-x86_64-unknown-linux-musl.tar.gz
+    checksum: sha256:6d2a576bde0a7b26533a068fec0aea6e4ee21c36668efc1dc73fce90110906ae
+    executable: pixi

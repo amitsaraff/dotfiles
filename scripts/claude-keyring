@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Claude's Linux login normally persists a plaintext credentials file. Instead,
+# supply a machine-generated subscription token from Secret Service per process.
+set -Eeuo pipefail
+set +x
+native="$HOME/.local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe"
+case "${1:-}" in
+  --version|-v|--help|-h|setup-token) exec "$native" "$@" ;;
+esac
+if [ "${1:-}" = auth ] && [ "${2:-}" = login ]; then
+  echo 'Use claude setup-token, then devbox-claude-token; Linux login stores plaintext.' >&2
+  exit 1
+fi
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
+if ! CLAUDE_CODE_OAUTH_TOKEN="$(timeout 10 secret-tool lookup application devbox service claude-oauth)" || [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+  echo 'Unlock the keyring, then use claude setup-token and devbox-claude-token.' >&2
+  exit 1
+fi
+export CLAUDE_CODE_OAUTH_TOKEN
+export DISABLE_AUTOUPDATER=1
+exec "$native" "$@"

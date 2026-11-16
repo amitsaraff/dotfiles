@@ -1,0 +1,20 @@
+---
+- name: Verify machine authentication and clone only missing owned repositories
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, "{{ devbox_src }}/dotfiles/scripts/clone_repos.py", --owner, "{{ devbox_owner }}", --root, "{{ devbox_src }}"]
+  register: repo_reconcile
+  environment:
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ ansible_facts['user_uid'] }}/bus"
+  # Repository names are private inventory; only counts appear in the summary.
+  no_log: true
+  changed_when: repo_reconcile.rc == 0 and (repo_reconcile.stdout | from_json).cloned > 0
+  when: not ansible_check_mode
+- name: Summarize owner repository coverage
+  ansible.builtin.debug:
+    msg: "{{ repo_reconcile.stdout | from_json }}"
+  when: not ansible_check_mode
+- name: Install personal skills after their repository is available
+  ansible.builtin.include_role:
+    name: skills
+    apply:
+      tags: [repositories]

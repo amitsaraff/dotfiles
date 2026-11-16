@@ -1,8 +1,14 @@
 # Personal dotfiles
 
-Portable Bash, Vim, Neovim and tmux preferences. The scripts install configuration
-only: they do not install packages, change your login shell, clone plugins, or
-copy credentials and application state.
+For full Ubuntu development-machine provisioning (packages, pinned runtimes,
+Docker, encrypted authentication setup, and owned repository checkout), see
+[the devbox guide](docs/devbox.md). Run `./devbox help` from the Mac controller.
+The configuration-only workflow below remains available independently.
+
+Portable Bash, Vim, Neovim and tmux preferences, plus shared Git settings.
+The configuration-only installer does not install packages, change your login
+shell, clone plugins, or copy credentials and application state. `devbox` handles
+the full machine setup described above.
 
 ## Managed configuration
 
@@ -132,6 +138,15 @@ keep the printed run directory. Do not run concurrent installers/restores or use
 manifests from untrusted sources. Symlink snapshots can be restored even if the
 checkout has been moved, by running a remaining copy of `restore.sh` and `lib/`.
 
+## Shared Git settings
+
+`home/.gitconfig` contains the personal author identity, aliases and default
+branch captured from the workstation. Devbox provisioning includes it from
+`~/.gitconfig` rather than replacing that file, preserving machine-specific
+GitHub credential helpers and other includes. The configuration-only installer
+does not own your Git config; integrate this file with Git `include.path` if
+you use that workflow. Credentials stay outside this repository.
+
 ## Local customization and optional plugins
 
 Keep private values and workstation settings outside this repository:
@@ -149,6 +164,8 @@ corporate PATHs, certificate paths and environment settings belong in the shell
 local files. Prefer a credential store to plaintext credentials even there.
 
 Optional existing fzf and bash-git-prompt integrations execute trusted local code.
+Devbox provisioning installs these dependencies, tree and Bash completion;
+configuration-only use keeps them optional.
 Set `DOTFILES_GIT_PROMPT=off` **before** sourcing the Bash config to use the built-in
 prompt regardless of installed third-party prompts. TPM is not installed or
 started automatically. If you intentionally use it, manage it yourself and add

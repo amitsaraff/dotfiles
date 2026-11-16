@@ -1,0 +1,22 @@
+---
+- name: Install approved encrypted Secret Service implementation
+  become: true
+  ansible.builtin.apt:
+    state: present
+    name: [gnome-keyring, libsecret-tools, dbus-user-session]
+- name: Create private Codex configuration directory
+  ansible.builtin.file:
+    path: "{{ devbox_home }}/.codex"
+    state: directory
+    mode: '0700'
+- name: Require Codex keyring storage without plaintext fallback
+  diff: false
+  ansible.builtin.lineinfile:
+    path: "{{ devbox_home }}/.codex/config.toml"
+    create: true
+    mode: '0600'
+    regexp: '^cli_auth_credentials_store\s*='
+    insertbefore: BOF
+    line: 'cli_auth_credentials_store = "keyring"'
+    backup: true
+  when: not ansible_check_mode

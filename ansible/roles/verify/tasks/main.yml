@@ -1,0 +1,77 @@
+---
+- name: Verify login-shell tools and runtime versions
+  ansible.builtin.command:
+    argv:
+      - bash
+      - -lc
+      - |
+        set -eu
+        for tool in git gh nvim tmux fzf bat fd rg jq tree brew mise uv pdm pixi node npm go python3.13 python3.14 codex claude playwright-cli; do
+          command -v "$tool"
+        done
+        node --version; go version; uv --version; pdm --version; pixi --version
+        python3.13 --version; python3.14 --version
+        codex --version; claude --version; playwright-cli --version
+        infocmp tmux-256color >/dev/null
+        nvim --headless -i NONE '+lua assert(vim.o.number)' +qa!
+        brew --version
+  changed_when: false
+- name: Verify Bash Git prompt loads in an interactive login shell
+  ansible.builtin.command:
+    argv: [bash, -lic, 'test "$_dotfiles_git_prompt_loaded" = 1 && declare -F git_prompt_list_themes >/dev/null']
+  changed_when: false
+- name: Verify portable Git settings and retained credential helper
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - |
+        import subprocess
+        from pathlib import Path
+        home = Path.home()
+        records = subprocess.check_output(['git', 'config', '--file', str(home / 'src/dotfiles/home/.gitconfig'), '--null', '--list'], text=True)
+        for record in records.split('\0'):
+            if not record:
+                continue
+            key, expected = record.split('\n', 1)
+            actual = subprocess.check_output(['git', '-C', str(home), 'config', '--get', key], text=True).rstrip('\n')
+            assert actual == expected, 'Shared Git setting differs: ' + key
+        helper = subprocess.check_output(['git', 'config', '--global', '--get-all', 'credential.https://github.com.helper'], text=True)
+        assert 'gh auth git-credential' in helper
+        print('All portable Git settings match; GitHub HTTPS helper retained.')
+  changed_when: false
+- name: Exercise real isolated tmux config and Neovim navigation
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, -m, unittest, discover, -s, tests, -p, test_runtime.py, -v]
+    chdir: "{{ devbox_src }}/dotfiles"
+  changed_when: false
+- name: Verify Docker Engine through sudo
+  become: true
+  ansible.builtin.command:
+    argv: [docker, info, --format, '{{ "{{.ServerVersion}}" }}']
+  changed_when: false
+- name: Verify Compose
+  become: true
+  ansible.builtin.command:
+    argv: [docker, compose, version]
+  changed_when: false
+- name: Verify Chrome installation
+  ansible.builtin.command:
+    argv: [google-chrome, --version]
+  changed_when: false
+- name: Inspect installed personal skills
+  ansible.builtin.stat:
+    path: "{{ devbox_src }}/skills/install.sh"
+  register: verify_skills_source
+- name: Validate installed personal skill links and dependencies
+  ansible.builtin.command:
+    argv: [bash, "{{ devbox_src }}/skills/check.sh"]
+  environment:
+    PATH: "{{ devbox_home }}/.local/bin:/usr/local/bin:/usr/bin:/bin"
+  changed_when: false
+  when: verify_skills_source.stat.exists
+- name: Verify browser CLI installation
+  ansible.builtin.command:
+    argv: ["{{ devbox_home }}/.local/bin/cdp", version, --json]
+  changed_when: false
+  when: verify_skills_source.stat.exists

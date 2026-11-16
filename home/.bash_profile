@@ -6,7 +6,7 @@
 if command -v brew >/dev/null 2>&1; then
   eval "$(brew shellenv)"
 else
-  for _dotfiles_brew in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+  for _dotfiles_brew in /opt/homebrew/bin/brew /usr/local/bin/brew "$HOME/.local/bin/brew" "$HOME/.linuxbrew/bin/brew"; do
     if [ -x "$_dotfiles_brew" ]; then
       eval "$("$_dotfiles_brew" shellenv)"
       break

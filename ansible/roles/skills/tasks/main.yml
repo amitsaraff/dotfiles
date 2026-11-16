@@ -1,0 +1,53 @@
+---
+- name: Inspect personal skills installer
+  ansible.builtin.stat:
+    path: "{{ devbox_src }}/skills/install.sh"
+    follow: false
+  register: skills_checkout
+- name: Explain skills bootstrap ordering
+  ansible.builtin.debug:
+    msg: Run ./devbox repos after GitHub login to clone and install personal skills.
+  when: not skills_checkout.stat.exists
+- name: Install reviewed personal skills and browser CLI
+  when: skills_checkout.stat.exists and not ansible_check_mode
+  block:
+    - name: Read skills source revision
+      ansible.builtin.command:
+        argv: [git, -C, "{{ devbox_src }}/skills", rev-parse, HEAD]
+      register: skills_revision
+      changed_when: false
+    - name: Inspect skills source edits
+      ansible.builtin.command:
+        argv: [git, -C, "{{ devbox_src }}/skills", status, --porcelain]
+      register: skills_edits
+      changed_when: false
+    - name: Require reviewed, unchanged skills before executing their installer
+      ansible.builtin.assert:
+        that:
+          - skills_revision.stdout == devbox_skills_revision
+          - skills_edits.stdout == ''
+        fail_msg: Review skills changes and safety findings before changing the revision pin. Local edits are never reset.
+    - name: Scan skills before installation
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, "{{ devbox_src }}/skills/validate-skill-safety/scripts/validate_skill_safety.py", "{{ devbox_src }}/skills", --json]
+      register: skills_scan
+      changed_when: false
+    - name: Install compatible CDP CLI dependency
+      ansible.builtin.include_tasks: cdp.yml
+    - name: Install shared skill links using the owned repository installer
+      ansible.builtin.command:
+        argv: [bash, "{{ devbox_src }}/skills/install.sh"]
+      register: skills_install
+      changed_when: "'created 0 links.' not in skills_install.stdout"
+    - name: Validate skills, handoffs, source inventory and all agent links
+      ansible.builtin.command:
+        argv: [bash, "{{ devbox_src }}/skills/check.sh"]
+      environment:
+        PATH: "{{ devbox_home }}/.local/bin:{{ devbox_home }}/.local/share/mise/shims:/usr/local/bin:/usr/bin:/bin"
+      changed_when: false
+    - name: Summarize installed personal skill scan
+      ansible.builtin.debug:
+        msg:
+          skills: "{{ (skills_scan.stdout | from_json).skill_files }}"
+          blockers: "{{ (skills_scan.stdout | from_json).blocker_count }}"
+          reviewed_warnings: "{{ (skills_scan.stdout | from_json).warning_count }}"

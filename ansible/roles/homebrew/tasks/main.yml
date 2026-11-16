@@ -1,0 +1,49 @@
+---
+- name: Inspect Linux Homebrew
+  ansible.builtin.stat:
+    path: /home/linuxbrew/.linuxbrew/bin/brew
+  register: brew_path
+- name: Install Homebrew with its reviewed checksum-pinned installer
+  when: not brew_path.stat.exists and not ansible_check_mode
+  block:
+    - name: Download reviewed Homebrew installer
+      ansible.builtin.get_url:
+        url: "https://raw.githubusercontent.com/Homebrew/install/{{ devbox_homebrew_installer_revision }}/install.sh"
+        checksum: "{{ devbox_homebrew_installer_checksum }}"
+        dest: "{{ devbox_home }}/.cache/devbox/homebrew-install.sh"
+        mode: '0700'
+    - name: Bootstrap Homebrew at the supported Linux prefix
+      ansible.builtin.command:
+        argv: [/bin/bash, "{{ devbox_home }}/.cache/devbox/homebrew-install.sh"]
+        creates: /home/linuxbrew/.linuxbrew/bin/brew
+      environment:
+        NONINTERACTIVE: '1'
+        HOMEBREW_NO_ANALYTICS: '1'
+- name: Expose Linux Homebrew to the portable login-shell setup
+  ansible.builtin.copy:
+    dest: "{{ devbox_home }}/.local/bin/brew"
+    follow: false
+    backup: true
+    mode: '0755'
+    content: |
+      #!/bin/sh
+      exec /home/linuxbrew/.linuxbrew/bin/brew "$@"
+  when: not ansible_check_mode
+- name: Inspect bash-git-prompt formula
+  ansible.builtin.command:
+    argv: [/home/linuxbrew/.linuxbrew/bin/brew, list, --versions, bash-git-prompt]
+  environment:
+    HOMEBREW_NO_AUTO_UPDATE: '1'
+    HOMEBREW_NO_ANALYTICS: '1'
+  register: brew_gitprompt
+  changed_when: false
+  failed_when: brew_gitprompt.rc not in [0, 1]
+  when: not ansible_check_mode
+- name: Install Bash Git prompt without upgrading existing formulae
+  ansible.builtin.command:
+    argv: [/home/linuxbrew/.linuxbrew/bin/brew, install, bash-git-prompt]
+  environment:
+    HOMEBREW_NO_AUTO_UPDATE: '1'
+    HOMEBREW_NO_ANALYTICS: '1'
+    HOMEBREW_NO_INSTALL_CLEANUP: '1'
+  when: not ansible_check_mode and brew_gitprompt.stdout == ''

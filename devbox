@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Isolated Mac/Linux Ansible controller. No credentials are copied to the target.
+set -Eeuo pipefail
+root="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+command -v uv >/dev/null || { echo 'Install uv on the controller first: https://docs.astral.sh/uv/' >&2; exit 1; }
+action="${1:-help}"
+if (($#)); then shift; fi
+export ANSIBLE_CONFIG="$root/ansible/ansible.cfg"
+case "$action" in
+  help|-h|--help)
+    echo 'Usage: ./devbox {syntax|check|apply|verify|repos|skills|notebooks} [Ansible options]'
+    echo 'Default target: aks-hertzner. Use --limit HOST and a reviewed inventory for another host.'
+    exit 0 ;;
+  syntax) flags=(--syntax-check) ;;
+  check) flags=(--check --diff --skip-tags 'repositories,verify') ;;
+  apply) flags=(--skip-tags 'repositories,verify') ;;
+  verify) flags=(--tags verify) ;;
+  repos) flags=(--tags repositories) ;;
+  skills) flags=(--tags skills) ;;
+  notebooks) flags=(--tags notebooks -e devbox_notebooks=true) ;;
+  *) echo "Unknown action: $action" >&2; exit 2 ;;
+esac
+archive="$(mktemp "${TMPDIR:-/tmp}/devbox-source.XXXXXX")"
+trap 'rm -f "$archive"' EXIT
+python3 "$root/scripts/source_archive.py" "$root" "$archive"
+cd "$root/ansible"
+uv run --python 3.13 --with ansible-core==2.22.0 -- ansible-playbook \
+  -i inventory/hosts.yml playbooks/devbox.yml \
+  -e "devbox_source_archive=$archive" "${flags[@]}" "$@"

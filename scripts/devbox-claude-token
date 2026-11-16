@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Generate a NEW machine token with `claude setup-token` in your own terminal.
+set -Eeuo pipefail
+set +x
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
+[ -t 0 ] || { echo 'Use your own SSH terminal.' >&2; exit 1; }
+read -r -s -p 'Paste the NEW machine Claude setup-token (hidden): ' devbox_claude_token
+printf '\n'
+[ -n "$devbox_claude_token" ] || exit 1
+printf '%s' "$devbox_claude_token" | timeout 10 secret-tool store --label='Devbox Claude subscription token' application devbox service claude-oauth
+unset devbox_claude_token
+echo 'Claude token stored in the encrypted keyring.'

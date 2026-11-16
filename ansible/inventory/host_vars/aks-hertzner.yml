@@ -1,0 +1,3 @@
+---
+# Initial supported platform. Architecture-specific release hashes live in group_vars.
+devbox_expected_release: '26.04'

@@ -320,6 +320,19 @@ _dotfiles_prompt
             "_dotfiles_prompt", "echo FIRST", "echo SECOND", "_dotfiles_history_sync",
         ])
 
+    def test_homebrew_git_prompt_is_loaded_from_prefix_with_spaces(self):
+        prefix = self.base / "brew prefix"
+        share = prefix / "opt/bash-git-prompt/share"
+        share.mkdir(parents=True)
+        (share / "gitprompt.sh").write_text("GIT_PROMPT_TEST_MARKER=loaded\n")
+        self.env["HOMEBREW_PREFIX"] = str(prefix)
+        self.env["DOTFILES_GIT_PROMPT"] = "auto"
+        output = self.shell(
+            f". '{self.repo}/home/.bashrc'; "
+            'printf "%s:%s:%s" "$_dotfiles_git_prompt_loaded" "$GIT_PROMPT_TEST_MARKER" "$GIT_PROMPT_FETCH_REMOTE_STATUS"'
+        )
+        self.assertEqual(output, "1:loaded:0")
+
     def test_macos_detection_and_path_output(self):
         source = f". '{self.repo}/home/.bashrc'"
         output = self.shell(f"OSTYPE=darwin-test; {source}; alias ls; alias df")

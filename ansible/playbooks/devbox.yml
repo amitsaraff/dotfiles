@@ -1,0 +1,42 @@
+---
+- name: Personal Ubuntu development box
+  hosts: devboxes
+  gather_facts: true
+  pre_tasks:
+    - name: Check supported platform and user
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['distribution'] == 'Ubuntu'
+          - ansible_facts['architecture'] == 'x86_64'
+          - ansible_facts['user_id'] != 'root'
+          - ansible_facts['distribution_version'] == devbox_expected_release
+        fail_msg: Review host release and architecture-specific artifacts before provisioning.
+      tags: [always]
+    - name: Set user paths
+      ansible.builtin.set_fact:
+        devbox_home: "{{ ansible_facts['env']['HOME'] }}"
+        devbox_src: "{{ ansible_facts['env']['HOME'] }}/src"
+      tags: [always]
+  roles:
+    - role: base
+      tags: [base]
+    - role: runtimes
+      tags: [runtimes]
+    - role: devtools
+      tags: [devtools]
+    - role: homebrew
+      tags: [homebrew]
+    - role: containers
+      tags: [containers]
+    - role: keyring
+      tags: [keyring]
+    - role: dotfiles
+      tags: [dotfiles]
+    - role: browser
+      tags: [browser]
+    - role: skills
+      tags: [skills]
+    - role: repositories
+      tags: [never, repositories]
+    - role: verify
+      tags: [never, verify]

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Attended login only; no token input or plaintext storage option is accepted.
+set -Eeuo pipefail
+set +x
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
+unset GH_TOKEN GITHUB_TOKEN
+probe="devbox-gh-probe-$$"
+trap 'secret-tool clear application devbox probe "$probe" >/dev/null 2>&1 || true' EXIT
+printf '%s' 'nonsecret-storage-test' | timeout 10 secret-tool store --label='Devbox GitHub storage probe' application devbox probe "$probe"
+[ "$(timeout 10 secret-tool lookup application devbox probe "$probe")" = nonsecret-storage-test ]
+gh auth login --hostname github.com --git-protocol https --web
+# Fail closed if gh unexpectedly fell back despite a working keyring.
+if ! gh auth status --hostname github.com 2>&1 | grep -q '(keyring)'; then
+  echo 'GitHub did not confirm keyring storage; refusing repository setup. Review gh auth status.' >&2
+  exit 1
+fi
+gh auth setup-git --hostname github.com
+echo 'GitHub authentication and HTTPS Git helper configured using the keyring.'

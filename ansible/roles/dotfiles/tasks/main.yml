@@ -1,0 +1,146 @@
+---
+- name: Inspect source root
+  ansible.builtin.stat:
+    path: "{{ devbox_src }}"
+    follow: false
+  register: source_root
+- name: Refuse source-root symlinks
+  ansible.builtin.assert:
+    that: not (source_root.stat.islnk | default(false))
+- name: Create source directory
+  ansible.builtin.file:
+    path: "{{ devbox_src }}"
+    state: directory
+    mode: '0755'
+- name: Inspect dotfiles checkout destination
+  ansible.builtin.stat:
+    path: "{{ devbox_src }}/dotfiles"
+    follow: false
+  register: dotfiles_path
+- name: Clone public dotfiles only when absent
+  ansible.builtin.command:
+    argv: [git, clone, --, "{{ devbox_dotfiles_url }}", "{{ devbox_src }}/dotfiles"]
+  when: not dotfiles_path.stat.exists
+- name: Check existing checkout origin
+  ansible.builtin.command:
+    argv: [git, -C, "{{ devbox_src }}/dotfiles", remote, get-url, origin]
+  register: dotfiles_origin
+  changed_when: false
+  when: not ansible_check_mode
+- name: Refuse unrelated dotfiles directories
+  ansible.builtin.assert:
+    that:
+      - not (dotfiles_path.stat.islnk | default(false))
+      - dotfiles_origin.stdout in [devbox_dotfiles_url, 'git@github.com:' + devbox_owner + '/dotfiles.git']
+  when: not ansible_check_mode
+- name: Deploy reviewed controller source with edit protection
+  when: not ansible_check_mode
+  block:
+    - name: Create temporary source staging directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: devbox-source-
+      register: source_staging
+      changed_when: false
+    - name: Extract controller source without credentials or Git state
+      ansible.builtin.unarchive:
+        src: "{{ devbox_source_archive }}"
+        dest: "{{ source_staging.path }}"
+      changed_when: false
+    - name: Reconcile source without overwriting remote edits
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - "{{ source_staging.path }}/scripts/deploy_source.py"
+          - "{{ source_staging.path }}"
+          - "{{ devbox_src }}/dotfiles"
+          - "{{ devbox_home }}/.local/state/devbox/source.json"
+      register: source_deploy
+      changed_when: (source_deploy.stdout | from_json).changed_files > 0
+  always:
+    - name: Remove temporary source staging
+      ansible.builtin.file:
+        path: "{{ source_staging.path }}"
+        state: absent
+      when: source_staging.path is defined
+      changed_when: false
+- name: Install dotfiles with recoverable conflict backups
+  ansible.builtin.command:
+    argv: [bash, "{{ devbox_src }}/dotfiles/install.sh", --components, "{{ devbox_components }}", --conflict, backup]
+  register: dotfiles_install
+  changed_when: "'nothing to change' not in dotfiles_install.stdout"
+  when: not ansible_check_mode
+- name: Preserve standard Ubuntu ~/bin login PATH and add runtime shims
+  diff: false
+  ansible.builtin.blockinfile:
+    path: "{{ devbox_home }}/.bash_profile.local"
+    create: true
+    mode: '0600'
+    marker: '# {mark} DOTFILES DEVBOX LOGIN'
+    block: |
+      for devbox_path in "$HOME/bin" "$HOME/.local/share/mise/shims"; do
+        if [ -d "$devbox_path" ]; then
+          case ":$PATH:" in *":$devbox_path:"*) ;; *) PATH="$devbox_path:$PATH" ;; esac
+        fi
+      done
+      export PATH
+      unset devbox_path
+      export DISABLE_AUTOUPDATER=1
+      export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+      export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
+- name: Activate mise in interactive Bash and load Ubuntu completion/fzf hooks
+  diff: false
+  ansible.builtin.blockinfile:
+    path: "{{ devbox_home }}/.bashrc.local"
+    create: true
+    mode: '0600'
+    marker: '# {mark} DOTFILES DEVBOX SHELL'
+    block: |
+      case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) PATH="$HOME/.local/bin:$PATH" ;; esac
+      export PATH
+      if [ -x "$HOME/.local/bin/mise" ]; then
+        eval "$("$HOME/.local/bin/mise" activate bash)"
+      fi
+      if [ -r /usr/share/bash-completion/bash_completion ]; then
+        . /usr/share/bash-completion/bash_completion
+      fi
+      # Older Ubuntu fzf packages lack `fzf --bash`.
+      if command -v fzf >/dev/null && ! fzf --bash >/dev/null 2>&1; then
+        for devbox_fzf in /usr/share/doc/fzf/examples/key-bindings.bash /usr/share/doc/fzf/examples/completion.bash; do
+          [ ! -r "$devbox_fzf" ] || . "$devbox_fzf"
+        done
+        unset devbox_fzf
+      fi
+      export DISABLE_AUTOUPDATER=1
+      export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+      export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
+- name: Link attended setup commands
+  ansible.builtin.file:
+    src: "{{ devbox_src }}/dotfiles/scripts/{{ item }}"
+    dest: "{{ devbox_home }}/.local/bin/{{ item }}"
+    state: link
+  loop: [devbox-keyring, devbox-github-login, devbox-claude-token]
+  when: not ansible_check_mode
+- name: Install Claude keyring wrapper
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../scripts/claude-keyring"
+    dest: "{{ devbox_home }}/.local/share/devbox/claude-keyring"
+    mode: '0755'
+  when: not ansible_check_mode
+- name: Use keyring wrapper for Claude launches
+  ansible.builtin.file:
+    src: "{{ devbox_home }}/.local/share/devbox/claude-keyring"
+    dest: "{{ devbox_home }}/.local/bin/claude"
+    state: link
+  when: not ansible_check_mode
+- name: Inspect existing shared Git configuration includes
+  ansible.builtin.command:
+    argv: [git, config, --global, --get-all, include.path]
+  register: git_includes
+  failed_when: git_includes.rc not in [0, 1]
+  changed_when: false
+  check_mode: false
+- name: Include portable Git settings while preserving machine authentication
+  ansible.builtin.command:
+    argv: [git, config, --global, --add, include.path, "{{ devbox_src }}/dotfiles/home/.gitconfig"]
+  when: (devbox_src + '/dotfiles/home/.gitconfig') not in git_includes.stdout_lines

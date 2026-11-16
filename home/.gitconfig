@@ -1,0 +1,12 @@
+# This is Git's per-user configuration file.
+[user]
+	name = Amit Saraff
+	email = amitsaraff@gmail.com
+[alias]
+    co = !echo 'git checkout' && git checkout
+    br = !echo 'git branch' && git branch
+    st = !echo 'git status' && git status
+	lg = log --color --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit --
+
+[init]
+	defaultBranch = main

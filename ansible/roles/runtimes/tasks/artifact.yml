@@ -1,0 +1,26 @@
+---
+- name: "Create {{ artifact.name }} release directory"
+  ansible.builtin.file:
+    path: "{{ devbox_home }}/.local/share/devbox/{{ artifact.name }}-{{ artifact.version }}"
+    state: directory
+    mode: '0755'
+- name: "Download checksum-pinned {{ artifact.name }}"
+  ansible.builtin.get_url:
+    url: "{{ artifact.url }}"
+    checksum: "{{ artifact.checksum }}"
+    dest: "{{ devbox_home }}/.cache/devbox/{{ artifact.name }}-{{ artifact.version }}.tar.gz"
+    mode: '0600'
+  when: not ansible_check_mode
+- name: "Extract {{ artifact.name }}"
+  ansible.builtin.unarchive:
+    src: "{{ devbox_home }}/.cache/devbox/{{ artifact.name }}-{{ artifact.version }}.tar.gz"
+    dest: "{{ devbox_home }}/.local/share/devbox/{{ artifact.name }}-{{ artifact.version }}"
+    remote_src: true
+    creates: "{{ devbox_home }}/.local/share/devbox/{{ artifact.name }}-{{ artifact.version }}/{{ artifact.executable }}"
+  when: not ansible_check_mode
+- name: "Link {{ artifact.name }} release"
+  ansible.builtin.file:
+    src: "{{ devbox_home }}/.local/share/devbox/{{ artifact.name }}-{{ artifact.version }}/{{ artifact.executable }}"
+    dest: "{{ devbox_home }}/.local/bin/{{ artifact.name }}"
+    state: link
+  when: not ansible_check_mode

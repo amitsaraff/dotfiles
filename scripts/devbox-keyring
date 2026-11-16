@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Run in your own SSH terminal. The password is never written to disk/history.
+set -Eeuo pipefail
+set +x
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
+if [ ! -t 0 ]; then
+  echo 'Run this interactively in your own SSH terminal.' >&2
+  exit 1
+fi
+read -r -s -p 'Keyring password (choose one on first use): ' devbox_keyring_password
+printf '\n'
+[ -n "$devbox_keyring_password" ] || { echo 'An empty keyring password is not allowed.' >&2; exit 1; }
+printf '%s' "$devbox_keyring_password" | gnome-keyring-daemon --unlock --components=secrets >/dev/null
+unset devbox_keyring_password
+probe="devbox-probe-$$"
+trap 'secret-tool clear application devbox probe "$probe" >/dev/null 2>&1 || true' EXIT
+printf '%s' 'nonsecret-storage-test' | timeout 10 secret-tool store --label='Devbox storage probe' application devbox probe "$probe"
+[ "$(timeout 10 secret-tool lookup application devbox probe "$probe")" = nonsecret-storage-test ]
+echo 'Encrypted keyring unlocked; storage probe passed.'

@@ -1,0 +1,64 @@
+---
+- name: Inspect installed global npm tools
+  ansible.builtin.command:
+    argv: ["{{ devbox_home }}/.local/bin/mise", exec, --, npm, list, --global, --prefix, "{{ devbox_home }}/.local", --json, --depth=0]
+  register: npm_installed
+  changed_when: false
+  failed_when: npm_installed.rc not in [0, 1]
+  when: not ansible_check_mode
+- name: Install versioned user npm tools
+  ansible.builtin.command:
+    argv:
+      - "{{ devbox_home }}/.local/bin/mise"
+      - exec
+      - --
+      - npm
+      - install
+      - --global
+      - --prefix
+      - "{{ devbox_home }}/.local"
+      - "@openai/codex@{{ devbox_codex_version }}"
+      - "@anthropic-ai/claude-code@{{ devbox_claude_version }}"
+      - "@playwright/cli@{{ devbox_playwright_cli_version }}"
+  register: npm_tools
+  when:
+    - not ansible_check_mode
+    - >-
+      (npm_installed.stdout | from_json).get('dependencies', {}).get('@openai/codex', {}).get('version') != devbox_codex_version or
+      (npm_installed.stdout | from_json).get('dependencies', {}).get('@anthropic-ai/claude-code', {}).get('version') != devbox_claude_version or
+      (npm_installed.stdout | from_json).get('dependencies', {}).get('@playwright/cli', {}).get('version') != devbox_playwright_cli_version
+- name: Install browser OS dependencies without browser downloads
+  become: true
+  ansible.builtin.apt:
+    state: present
+    name:
+      - libasound2t64
+      - libatk1.0-0t64
+      - libatk-bridge2.0-0t64
+      - libatspi2.0-0t64
+      - libcups2t64
+      - libdbus-1-3
+      - libdrm2
+      - libgbm1
+      - libglib2.0-0t64
+      - libnspr4
+      - libnss3
+      - libpango-1.0-0
+      - libcairo2
+      - libx11-6
+      - libxcb1
+      - libxcomposite1
+      - libxdamage1
+      - libxext6
+      - libxfixes3
+      - libxkbcommon0
+      - libxrandr2
+      - fonts-liberation
+      - xvfb
+- name: Optional isolated notebook tools
+  ansible.builtin.command:
+    argv: ["{{ devbox_home }}/.local/bin/uv", tool, install, "jupyterlab=={{ devbox_jupyter_version }}", --python, "{{ devbox_python_versions[0] }}"]
+  register: notebook_install
+  changed_when: "'Installed ' in notebook_install.stderr"
+  when: devbox_notebooks | bool and not ansible_check_mode
+  tags: [never, notebooks]

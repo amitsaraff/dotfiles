@@ -1,0 +1,52 @@
+---
+- name: Install verified user binaries
+  ansible.builtin.include_tasks: artifact.yml
+  loop: "{{ devbox_artifacts }}"
+  loop_control:
+    loop_var: artifact
+- name: Write pinned global runtime configuration
+  diff: false
+  ansible.builtin.copy:
+    dest: "{{ devbox_home }}/.config/mise/config.toml"
+    mode: '0600'
+    backup: true
+    content: |
+      # Managed by dotfiles Ansible. Upgrade versions in group_vars/devboxes.yml.
+      [tools]
+      node = "{{ devbox_node_version }}"
+      go = "{{ devbox_go_version }}"
+  register: mise_config
+  when: not ansible_check_mode
+- name: Inspect installed runtime versions
+  ansible.builtin.command:
+    argv: ["{{ devbox_home }}/.local/bin/mise", ls, --missing, --json]
+    chdir: "{{ devbox_home }}"
+  register: mise_missing
+  changed_when: false
+  when: not ansible_check_mode
+- name: Install missing pinned runtimes
+  ansible.builtin.command:
+    argv: ["{{ devbox_home }}/.local/bin/mise", install]
+    chdir: "{{ devbox_home }}"
+  when: not ansible_check_mode and (mise_missing.stdout | from_json | length > 0)
+- name: Refresh runtime shims after configuration changes
+  ansible.builtin.command:
+    argv: ["{{ devbox_home }}/.local/bin/mise", reshim]
+  when: not ansible_check_mode and mise_config.changed
+- name: Inspect managed Python versions
+  ansible.builtin.command:
+    argv: ["{{ devbox_home }}/.local/bin/uv", python, list, --only-installed, --output-format, json]
+  register: python_installed
+  changed_when: false
+  when: not ansible_check_mode
+- name: Install pinned user Python versions
+  ansible.builtin.command:
+    argv: ["{{ devbox_home }}/.local/bin/uv", python, install, "{{ item }}"]
+  loop: "{{ devbox_python_versions }}"
+  when: not ansible_check_mode and item not in python_installed.stdout
+- name: Install isolated PDM
+  ansible.builtin.command:
+    argv: ["{{ devbox_home }}/.local/bin/uv", tool, install, "pdm=={{ devbox_pdm_version }}", --python, "{{ devbox_python_versions[0] }}"]
+  register: pdm_install
+  changed_when: "'Installed ' in pdm_install.stderr"
+  when: not ansible_check_mode
