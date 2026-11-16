@@ -53,9 +53,11 @@ vnoremap / /\v
 map <leader><space> :let @/=''<CR>
 
 " Key mappings
-inoremap <F1> <ESC>:set invfullscreen<CR>a
-nnoremap <F1> :set invfullscreen<CR>
-vnoremap <F1> :set invfullscreen<CR>
+if exists('+fullscreen')
+  inoremap <F1> <ESC>:set invfullscreen<CR>a
+  nnoremap <F1> :set invfullscreen<CR>
+  vnoremap <F1> :set invfullscreen<CR>
+endif
 map <leader>q gqip
 
 " Colours and files
@@ -64,3 +66,8 @@ set nobackup
 set nowritebackup
 set noswapfile
 set modelines=0
+
+" Machine-local overrides stay outside the checkout.
+if filereadable(expand('~/.vimrc.local'))
+  execute 'source ' . fnameescape(expand('~/.vimrc.local'))
+endif

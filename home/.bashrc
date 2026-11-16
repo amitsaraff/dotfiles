@@ -6,6 +6,33 @@ case $- in
   *) return ;;
 esac
 
+# Append/prepend hooks without flattening a modern Bash PROMPT_COMMAND array.
+_dotfiles_add_prompt_hook() {
+  local hook="$1" position="$2" existing
+  case "$(declare -p PROMPT_COMMAND 2>/dev/null)" in
+    "declare -a"*)
+      for existing in "${PROMPT_COMMAND[@]}"; do
+        [ "$existing" != "$hook" ] || return 0
+      done
+      if [ "$position" = first ]; then
+        PROMPT_COMMAND=("$hook" "${PROMPT_COMMAND[@]}")
+      else
+        PROMPT_COMMAND+=("$hook")
+      fi
+      ;;
+    *)
+      case ";${PROMPT_COMMAND:-};" in
+        *";$hook;"*|*"; $hook;"*) return 0 ;;
+      esac
+      if [ "$position" = first ]; then
+        PROMPT_COMMAND="$hook${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
+      else
+        PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND; }$hook"
+      fi
+      ;;
+  esac
+}
+
 # fzf shell integration is useful but optional.
 if command -v fzf >/dev/null 2>&1; then
   _dotfiles_fzf_init="$(fzf --bash 2>/dev/null || true)"
@@ -23,7 +50,8 @@ for _dotfiles_git_prompt in \
   "$HOME/.bash-git-prompt/share/gitprompt.sh" \
   "/opt/homebrew/opt/bash-git-prompt/share/gitprompt.sh" \
   "/usr/local/opt/bash-git-prompt/share/gitprompt.sh"; do
-  if [ -n "$_dotfiles_git_prompt" ] && [ -r "$_dotfiles_git_prompt" ]; then
+  if [ "${DOTFILES_GIT_PROMPT:-auto}" != off ] &&
+     [ -n "$_dotfiles_git_prompt" ] && [ -r "$_dotfiles_git_prompt" ]; then
     # shellcheck disable=SC1090
     . "$_dotfiles_git_prompt"
     _dotfiles_git_prompt_loaded=1
@@ -40,17 +68,14 @@ if [ "$_dotfiles_git_prompt_loaded" -eq 0 ]; then
 
   _dotfiles_prompt() {
     local exit_status="$?"
-    local branch
-    branch="$(_dotfiles_git_branch)"
-    if [ -n "$branch" ]; then
-      PS1="\\u@\\h:\\w [$branch]\\$ "
-    else
-      PS1="\\u@\\h:\\w\\$ "
-    fi
+    _dotfiles_branch="$(_dotfiles_git_branch)"
+    # Expand branch data as a variable, not as fresh prompt syntax.
+    # Substitutions inside the variable value are not evaluated recursively.
+    PS1='\u@\h:\w${_dotfiles_branch:+ [${_dotfiles_branch}]}\$ '
     return "$exit_status"
   }
 
-  PROMPT_COMMAND="_dotfiles_prompt${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
+  _dotfiles_add_prompt_hook _dotfiles_prompt first
 fi
 
 # fzf and tree remain optional; the aliases only exist when their commands do.
@@ -67,11 +92,19 @@ alias ..='cd ..'
 alias h='history'
 alias j='jobs -l'
 alias which='type -a'
-alias path='printf "%s\\n" "${PATH//:/\\n}"'
-alias libpath='printf "%s\\n" "${LD_LIBRARY_PATH//:/\\n}"'
+_dotfiles_print_path() {
+  local rest="$1"
+  while :; do
+    printf '%s\n' "${rest%%:*}"
+    [ "$rest" != "${rest#*:}" ] || break
+    rest="${rest#*:}"
+  done
+}
+alias path='_dotfiles_print_path "${PATH:-}"'
+alias libpath='_dotfiles_print_path "${LD_LIBRARY_PATH:-}"'
 alias du='du -kh'
 
-if [ "${OSTYPE:-}" = darwin* ]; then
+if [[ "${OSTYPE:-}" = darwin* ]]; then
   alias df='df -kh'
   alias ls='ls -hG'
 else
@@ -112,10 +145,7 @@ _dotfiles_history_sync() {
   history -a
   history -n
 }
-case ";${PROMPT_COMMAND:-};" in
-  *";_dotfiles_history_sync;"*) ;;
-  *) PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND; }_dotfiles_history_sync" ;;
-esac
+_dotfiles_add_prompt_hook _dotfiles_history_sync last
 
 # A local file is the supported escape hatch for credentials and per-machine
 # settings. It is intentionally not part of this repository.

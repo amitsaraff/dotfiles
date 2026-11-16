@@ -1,199 +1,174 @@
 #!/usr/bin/env bash
-# Install the managed files into the current user's home directory.
 set -Eeuo pipefail
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+TARGET_HOME="$(CDPATH= cd -- "${HOME:?HOME must be set}" && pwd -P)"
+readonly SCRIPT_DIR TARGET_HOME
+. "$SCRIPT_DIR/lib/common.sh"
 
-readonly SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-readonly TARGET_HOME="${HOME:?HOME must be set to install dotfiles}"
-readonly BACKUP_ROOT="${DOTFILES_BACKUP_DIR:-$TARGET_HOME/.dotfiles-backups}"
-
-mode="symlink"
+mode=symlink
+conflict=fail
+components=bash,vim,nvim,tmux
+nvim_appname=nvim
 dry_run=0
 check_only=0
-
-managed_files=(
-  ".bashrc"
-  ".bash_profile"
-  ".vimrc"
-  ".tmux.conf"
-)
+integrate=0
+run_dir=""
 
 usage() {
-  cat <<'EOF'
+  cat <<'HELP'
 Usage: ./install.sh [options]
-
-Install the repository's managed files into $HOME.
-
-Options:
-  --check       Validate dependencies and source files without installing.
-  --copy        Copy files instead of creating symlinks.
-  --dry-run     Show what would happen without changing files.
-  -h, --help    Show this help.
-EOF
+  --components LIST       Comma-separated bash,vim,nvim,tmux (default: all).
+  --conflict POLICY       fail (default), skip, or backup.
+  --copy                  Copy instead of symlink; equal regular files are skipped.
+  --nvim-appname NAME     Install a separate Neovim configuration namespace.
+  --integrate             Print integration snippets; never edit existing configs.
+  --check                 Check selected sources, dependencies, and conflicts.
+  --dry-run               Preview all actions without writing anything.
+  -h, --help              Show help.
+HELP
 }
 
-die() {
-  printf 'install.sh: error: %s\n' "$*" >&2
-  exit 1
-}
+while (($#)); do
+  case "$1" in
+    --components|--conflict|--nvim-appname)
+      [ "$#" -ge 2 ] || die "$1 requires a value"
+      case "$1" in
+        --components) components="$2" ;;
+        --conflict) conflict="$2" ;;
+        --nvim-appname) nvim_appname="$2" ;;
+      esac
+      shift ;;
+    --copy) mode=copy ;;
+    --integrate) integrate=1 ;;
+    --check) check_only=1 ;;
+    --dry-run) dry_run=1 ;;
+    -h|--help) usage; exit 0 ;;
+    *) die "unknown option: $1" ;;
+  esac
+  shift
+done
+case "$conflict" in fail|skip|backup) ;; *) die "unknown conflict policy: $conflict" ;; esac
+build_manifest
+check_sources
+check_dependencies
 
-command_exists() {
-  command -v "$1" >/dev/null 2>&1
-}
-
-version_at_least() {
-  # Compare two dotted numeric versions without relying on sort -V.
-  local actual="$1" required="$2"
-  local actual_major actual_minor required_major required_minor
-  IFS=. read -r actual_major actual_minor _ <<EOF
-$actual
-EOF
-  IFS=. read -r required_major required_minor _ <<EOF
-$required
-EOF
-  actual_major=${actual_major:-0}
-  actual_minor=${actual_minor:-0}
-  required_major=${required_major:-0}
-  required_minor=${required_minor:-0}
-
-  if (( actual_major > required_major )); then
-    return 0
+if ((integrate)); then
+  printf '# Snippets only: review ordering and conflicting options before adding them.\n'
+  if has_component bash; then
+    printf '# Existing .bashrc (interactive settings):\n. %q\n' "$SCRIPT_DIR/home/.bashrc"
+    printf '# Existing login profile (PATH setup; also sources your .bashrc):\n. %q\n' "$SCRIPT_DIR/home/.bash_profile"
   fi
-  if (( actual_major == required_major && actual_minor >= required_minor )); then
-    return 0
+  if has_component vim; then
+    vim_path="${SCRIPT_DIR//\'/\'\'}"
+    printf "# Existing .vimrc:\nexecute 'source ' . fnameescape('%s/home/.vimrc')\n" "$vim_path"
   fi
-  return 1
-}
-
-check_bash() {
-  local bash_path bash_version
-  bash_path="$(command -v bash || true)"
-  [ -n "$bash_path" ] || die "bash is required; install Bash 3.2 or newer"
-  bash_version="$("$bash_path" -c 'printf "%s\n" "$BASH_VERSION"')"
-  version_at_least "$bash_version" "3.2" || die "bash >= 3.2 is required (found $bash_version)"
-}
-
-check_command_dependencies() {
-  local missing=()
-  local command_name
-  for command_name in git vim tmux; do
-    if ! command_exists "$command_name"; then
-      missing+=("$command_name")
-    fi
-  done
-  if ((${#missing[@]} > 0)); then
-    die "missing required command(s): ${missing[*]}; install them and run ./install.sh again"
+  if has_component tmux; then
+    printf '# Apply on demand to the current tmux server (changes global options/bindings):\ntmux source-file %q\n' "$SCRIPT_DIR/home/.tmux.conf"
+    printf '# Or start a separate server:\ntmux -L personal -f %q new-session\n' "$SCRIPT_DIR/home/.tmux.conf"
   fi
-}
-
-check_source_files() {
-  local file
-  for file in "${managed_files[@]}"; do
-    [ -r "$SCRIPT_DIR/home/$file" ] || die "repository file is missing or unreadable: home/$file"
-  done
-}
-
-check_target_home() {
-  [ -d "$TARGET_HOME" ] || die "target home directory does not exist: $TARGET_HOME"
-  [ -w "$TARGET_HOME" ] || die "target home directory is not writable: $TARGET_HOME"
-}
-
-show_optional_dependencies() {
-  local optional=()
-  command_exists fzf || optional+=("fzf")
-  command_exists tree || optional+=("tree")
-  if ((${#optional[@]} > 0)); then
-    printf 'install.sh: note: optional command(s) not found: %s\n' "${optional[*]}"
+  if has_component nvim; then
+    printf '# Do not auto-merge Lua/plugin setups. For an isolated configuration:\n'
+    printf '# ./install.sh --components nvim --nvim-appname personal-nvim\n'
+    printf 'NVIM_APPNAME=personal-nvim nvim\n'
   fi
-}
-
-run_checks() {
-  check_bash
-  check_command_dependencies
-  check_source_files
-  check_target_home
-  show_optional_dependencies
-  printf 'install.sh: dependency and source checks passed\n'
-}
-
-print_action() {
-  if ((dry_run)); then
-    printf 'dry-run: %s\n' "$*"
-  fi
-}
-
-install_file() {
-  local file="$1"
-  local source="$SCRIPT_DIR/home/$file"
-  local target="$TARGET_HOME/$file"
-
-  if [ -L "$target" ] && [ "$(readlink "$target")" = "$source" ]; then
-    print_action "leave $target (already linked)"
-    return 0
-  fi
-
-  if [ -e "$target" ] || [ -L "$target" ]; then
-    print_action "move $target to $backup_dir/$file"
-    if (( ! dry_run )); then
-      mkdir -p "$backup_dir"
-      mv "$target" "$backup_dir/$file"
-    fi
-  fi
-
-  if [ "$mode" = "symlink" ]; then
-    print_action "link $target -> $source"
-    if (( ! dry_run )); then
-      ln -s "$source" "$target"
-    fi
-  else
-    print_action "copy $source -> $target"
-    if (( ! dry_run )); then
-      cp "$source" "$target"
-    fi
-  fi
-}
-
-parse_args() {
-  while (($# > 0)); do
-    case "$1" in
-      --check)
-        check_only=1
-        ;;
-      --copy)
-        mode="copy"
-        ;;
-      --dry-run)
-        dry_run=1
-        ;;
-      -h|--help)
-        usage
-        exit 0
-        ;;
-      *)
-        usage >&2
-        die "unknown option: $1"
-        ;;
-    esac
-    shift
-  done
-}
-
-parse_args "$@"
-run_checks
-
-if ((check_only)); then
   exit 0
 fi
 
-timestamp="$(date '+%Y%m%d-%H%M%S')"
-backup_dir="$BACKUP_ROOT/$timestamp"
-for managed_file in "${managed_files[@]}"; do
-  install_file "$managed_file"
+actions=()
+for ((i=0; i<${#sources[@]}; i++)); do
+  source="$SCRIPT_DIR/home/${sources[i]}"
+  target="${targets[i]}"
+  validate_path "$target"
+  action=install
+  if [ "$mode" = symlink ] && [ -L "$target" ] && [ "$(readlink "$target")" = "$source" ]; then
+    action=unchanged
+  elif [ "$mode" = copy ] && [ -f "$target" ] && [ ! -L "$target" ] && cmp -s "$source" "$target"; then
+    action=unchanged
+  elif [ -e "$target" ] || [ -L "$target" ]; then
+    [ ! -d "$target" ] || [ -L "$target" ] || die "target is a directory: $target"
+    case "$conflict" in
+      fail) die "existing unmanaged config: $target (use --conflict skip or backup)" ;;
+      skip) action=skip ;;
+      backup) action=backup ;;
+    esac
+  fi
+  if [ "${sources[i]}" = .config/nvim/init.lua ] &&
+     { [ -e "$(dirname -- "$target")/init.vim" ] || [ -L "$(dirname -- "$target")/init.vim" ]; }; then
+    if [ "$conflict" = skip ]; then
+      action=skip
+    else
+      die "Neovim init.vim already exists; use --nvim-appname for isolation or --conflict skip"
+    fi
+  fi
+  case "$action" in install|backup) check_parents "$target" ;; esac
+  actions+=("$action")
 done
 
+# A new .bash_profile would silently shadow an existing alternate login profile.
+if has_component bash && [ ! -e "$TARGET_HOME/.bash_profile" ] && [ ! -L "$TARGET_HOME/.bash_profile" ]; then
+  if [ -e "$TARGET_HOME/.profile" ] || [ -L "$TARGET_HOME/.profile" ] ||
+     [ -e "$TARGET_HOME/.bash_login" ] || [ -L "$TARGET_HOME/.bash_login" ]; then
+    case "$conflict" in
+      fail) die "new .bash_profile would shadow .profile/.bash_login; use --integrate or explicitly choose backup/skip" ;;
+      skip) actions[1]=skip ;;
+      backup) printf 'dotfiles: warning: new .bash_profile shadows .profile/.bash_login; originals remain on disk\n' >&2 ;;
+    esac
+  fi
+fi
+
+backup_root="${DOTFILES_BACKUP_DIR:-$TARGET_HOME/.dotfiles-backups}"
+validate_path "$backup_root"
+check_parents "$backup_root/run"
+if ((check_only)); then
+  printf 'dotfiles: selected dependency, source, and conflict checks passed\n'
+  exit 0
+fi
+
+rollback() {
+  local status="$?"
+  trap - EXIT
+  if ((status != 0)) && [ -n "$run_dir" ]; then
+    printf 'dotfiles: install interrupted; attempting restore from %s\n' "$run_dir" >&2
+    bash "$SCRIPT_DIR/restore.sh" "$run_dir" || printf 'dotfiles: automatic restore failed; keep the backup directory for manual recovery\n' >&2
+  fi
+  exit "$status"
+}
+trap rollback EXIT
+
+for ((i=0; i<${#sources[@]}; i++)); do
+  source="$SCRIPT_DIR/home/${sources[i]}"
+  target="${targets[i]}"
+  action="${actions[i]}"
+  printf 'dotfiles: %s %s (%s)\n' "$action" "$target" "$mode"
+  case "$action" in unchanged|skip) continue ;; esac
+  (( ! dry_run )) || continue
+  if [ -z "$run_dir" ]; then
+    umask 077
+    mkdir -p "$backup_root"
+    run_dir="$(mktemp -d "$backup_root/$(date '+%Y%m%d-%H%M%S').XXXXXX")"
+    mkdir "$run_dir/before" "$run_dir/installed" "$run_dir/staged"
+    : > "$run_dir/manifest.tsv"
+  fi
+  mkdir -p "$(dirname -- "$target")"
+  if [ "$mode" = symlink ]; then
+    ln -s "$source" "$run_dir/installed/$i"
+    ln -s "$source" "$run_dir/staged/$i"
+  else
+    cp "$source" "$run_dir/installed/$i"
+    cp "$run_dir/installed/$i" "$run_dir/staged/$i"
+  fi
+  # Record before mutating the target so an interrupted install can be restored.
+  printf '%s\t%s\t%s\n' "$i" "$mode" "$target" >> "$run_dir/manifest.tsv"
+  if [ -e "$target" ] || [ -L "$target" ]; then
+    # Preserve the original symlink itself, never its referent.
+    mv "$target" "$run_dir/before/$i"
+  fi
+  mv "$run_dir/staged/$i" "$target"
+done
 if ((dry_run)); then
-  printf 'install.sh: dry-run complete\n'
-elif [ -d "$backup_dir" ]; then
-  printf 'install.sh: installed %d file(s); backups: %s\n' "${#managed_files[@]}" "$backup_dir"
+  printf 'dotfiles: dry-run complete; no files changed\n'
+elif [ -n "$run_dir" ]; then
+  printf 'dotfiles: installed; restore with:\n  %q %q\n' "$SCRIPT_DIR/restore.sh" "$run_dir"
 else
-  printf 'install.sh: installed %d file(s); no existing files needed backup\n' "${#managed_files[@]}"
+  printf 'dotfiles: nothing to change\n'
 fi
